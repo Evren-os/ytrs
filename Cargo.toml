@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.5.53", features = ["derive"] }
+tokio = { version = "1.48.0", features = ["full"] }
+anyhow = "1.0.100"
+url = "2.5.7"
+colored = "3.0.0"
+signal-hook = "0.3.18"
+signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"] }
+which = "8.0.0"
+futures = "0.3.31"
