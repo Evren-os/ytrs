@@ -1,30 +1,24 @@
 mod args_builder;
+mod config;
 mod dependencies;
 mod downloader;
+mod error;
 mod url_validator;
 
 use crate::dependencies::check_dependencies;
 use crate::downloader::{download_batch, download_single};
+use crate::error::Result;
 use crate::url_validator::validate_url;
-use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 
 #[derive(Parser)]
 #[command(
     name = "ytrs",
-    about = "A wrapper for yt-dlp to download single videos or batches with optimized settings.",
-    long_about = "Automatically detects batch mode when multiple URLs are provided."
+    about = "A high-quality wrapper for yt-dlp with VP9 codec optimization.",
+    long_about = "Downloads media with maximum quality VP9 codec. Supports batch mode with multiple URLs."
 )]
 struct Cli {
-    #[arg(
-        short = 'c',
-        long,
-        default_value = "av1",
-        help = "Preferred video codec (av1 or vp9). Ignored if -socm is used."
-    )]
-    codec: String,
-
     #[arg(
         short = 'd',
         long,
@@ -40,7 +34,7 @@ struct Cli {
 
     #[arg(
         long,
-        help = "Optimize for social media compatibility (MP4, H.264/AAC)."
+        help = "Optimize for social media compatibility (MP4, H.264/AAC). Uses quality-preserving re-encoding."
     )]
     socm: bool,
 
@@ -68,7 +62,7 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    check_dependencies(&["yt-dlp", "aria2c"])?;
+    check_dependencies(&["yt-dlp", "aria2c", "ffmpeg"])?;
 
     if cli.urls.len() == 1 {
         let url = cli.urls[0].trim();
@@ -77,11 +71,10 @@ async fn main() -> Result<()> {
             std::process::exit(1);
         }
 
-        download_single(url, &cli.codec, cli.destination, cli.cookies_from, cli.socm).await?;
+        download_single(url, cli.destination, cli.cookies_from, cli.socm).await?;
     } else {
         download_batch(
             cli.urls,
-            cli.codec,
             cli.destination,
             cli.cookies_from,
             cli.socm,

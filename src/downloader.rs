@@ -1,6 +1,6 @@
-use crate::args_builder::{build_ytdlp_args, YtDlpArgs};
+use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
+use crate::error::{Result, YtrsError};
 use crate::url_validator::sanitize_and_deduplicate;
-use anyhow::{anyhow, Result};
 use colored::Colorize;
 use futures::StreamExt;
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -12,24 +12,21 @@ use tokio::task::JoinSet;
 
 pub async fn download_single(
     url: &str,
-    codec_pref: &str,
     destination_path: Option<String>,
     cookies_from: Option<String>,
     socm: bool,
 ) -> Result<()> {
     let args = YtDlpArgs {
-        codec_pref: codec_pref.to_string(),
         destination_path,
         cookies_from,
         socm,
     };
 
     let cmd_args = build_ytdlp_args(url, &args);
-
     let status = Command::new("yt-dlp").args(&cmd_args).status().await?;
 
     if !status.success() {
-        return Err(anyhow!("yt-dlp failed with exit code: {:?}", status.code()));
+        return Err(YtrsError::YtDlpFailed(status.code()));
     }
 
     Ok(())
@@ -37,7 +34,6 @@ pub async fn download_single(
 
 async fn download_url_task(
     url: String,
-    codec_pref: String,
     destination_path: Option<String>,
     cookies_from: Option<String>,
     socm: bool,
@@ -46,7 +42,6 @@ async fn download_url_task(
     println!("{} {}", "Starting download:".cyan(), url.cyan());
 
     let args = YtDlpArgs {
-        codec_pref,
         destination_path,
         cookies_from,
         socm,
@@ -81,7 +76,6 @@ async fn download_url_task(
 
 pub async fn download_batch(
     urls: Vec<String>,
-    codec_pref: String,
     destination_path: Option<String>,
     cookies_from: Option<String>,
     socm: bool,
@@ -90,7 +84,7 @@ pub async fn download_batch(
     let clean_urls = sanitize_and_deduplicate(urls.clone());
 
     if clean_urls.is_empty() {
-        return Err(anyhow!("no valid URLs provided"));
+        return Err(YtrsError::NoValidUrls);
     }
 
     if clean_urls.len() != urls.len() {
@@ -117,14 +111,12 @@ pub async fn download_batch(
                 .await
                 .expect("semaphore closed unexpectedly");
             let failed_urls_clone = failed_urls.clone();
-            let codec_pref_clone = codec_pref.clone();
             let destination_path_clone = destination_path.clone();
             let cookies_from_clone = cookies_from.clone();
 
             join_set.spawn(async move {
                 download_url_task(
                     url,
-                    codec_pref_clone,
                     destination_path_clone,
                     cookies_from_clone,
                     socm,
@@ -139,7 +131,7 @@ pub async fn download_batch(
     };
 
     tokio::select! {
-        _ = download_future => {},
+        () = download_future => {},
         signal = signals_stream.next() => {
             if signal.is_some() {
                 eprintln!(
@@ -167,15 +159,15 @@ pub async fn download_batch(
         for url in failed.iter() {
             println!("  - {}", url.red());
         }
-        return Err(anyhow!("{} downloads failed", failed.len()));
-    } else {
-        println!("\n--- Summary ---");
-        println!(
-            "{} All {} downloads completed successfully.",
-            "Success:".green(),
-            clean_urls.len()
-        );
+        return Err(YtrsError::PartialFailure(failed.len()));
     }
+
+    println!("\n--- Summary ---");
+    println!(
+        "{} All {} downloads completed successfully.",
+        "Success:".green(),
+        clean_urls.len()
+    );
 
     Ok(())
 }
