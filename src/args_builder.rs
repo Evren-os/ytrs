@@ -27,6 +27,8 @@ pub fn build_ytdlp_args(url: &str, args: &YtDlpArgs) -> Vec<String> {
     };
 
     let mut result = vec![
+        "--remote-components".to_string(),
+        "ejs:github".to_string(),
         "--prefer-free-formats".to_string(),
         "--format-sort-force".to_string(),
         "--no-mtime".to_string(),
@@ -35,7 +37,7 @@ pub fn build_ytdlp_args(url: &str, args: &YtDlpArgs) -> Vec<String> {
         "--external-downloader".to_string(),
         "aria2c".to_string(),
         "--external-downloader-args".to_string(),
-        ARIA2C_ARGS.to_string(),
+        format!("aria2c:{}", ARIA2C_ARGS),
     ];
 
     if let Some(ref cookies) = args.cookies_from {
