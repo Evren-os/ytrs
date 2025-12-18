@@ -1,48 +1,49 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use crate::config::{
-    ARIA2C_ARGS, DEFAULT_FILENAME_PATTERN, DEFAULT_MERGE_FORMAT, MAX_RESOLUTION,
-    SOCM_AUDIO_BITRATE, SOCM_MAX_HEIGHT, SOCM_MERGE_FORMAT, SOCM_VIDEO_CRF, VP9_FORMAT_SORT,
+    ARIA2C_ARGS, DEFAULT_FILENAME_PATTERN, DEFAULT_MERGE_FORMAT, FORMAT_QUALITY, FORMAT_SOCM,
+    SOCM_MERGE_FORMAT, SOCM_POSTPROCESSOR_ARGS, VP9_FORMAT_SORT,
 };
 
-pub struct YtDlpArgs {
-    pub destination_path: Option<String>,
-    pub cookies_from: Option<String>,
+#[derive(Default)]
+pub struct YtDlpArgs<'a> {
+    pub destination_path: Option<&'a Path>,
+    pub cookies_from: Option<&'a str>,
     pub socm: bool,
 }
 
-pub fn build_ytdlp_args(url: &str, args: &YtDlpArgs) -> Vec<String> {
-    let output_template = match args.destination_path {
-        Some(ref dest) => {
-            let path = Path::new(dest);
-            if path.is_dir() {
-                path.join(DEFAULT_FILENAME_PATTERN)
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                dest.clone()
-            }
-        }
-        None => DEFAULT_FILENAME_PATTERN.to_string(),
+pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, str>> {
+    let output_template: Cow<'a, str> = match args.destination_path {
+        Some(dest) if dest.is_dir() => Cow::Owned(
+            dest.join(DEFAULT_FILENAME_PATTERN)
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        Some(dest) => Cow::Owned(dest.to_string_lossy().into_owned()),
+        None => Cow::Borrowed(DEFAULT_FILENAME_PATTERN),
     };
 
-    let mut result = vec![
-        "--remote-components".to_string(),
-        "ejs:github".to_string(),
-        "--prefer-free-formats".to_string(),
-        "--format-sort-force".to_string(),
-        "--no-mtime".to_string(),
-        "--output".to_string(),
-        output_template,
-        "--external-downloader".to_string(),
-        "aria2c".to_string(),
-        "--external-downloader-args".to_string(),
-        format!("aria2c:{}", ARIA2C_ARGS),
-    ];
+    let capacity = if args.socm { 18 } else { 16 };
+    let mut result: Vec<Cow<'a, str>> = Vec::with_capacity(capacity);
 
-    if let Some(ref cookies) = args.cookies_from {
-        result.push("--cookies-from-browser".to_string());
-        result.push(cookies.clone());
+    result.extend([
+        Cow::Borrowed("--remote-components"),
+        Cow::Borrowed("ejs:github"),
+        Cow::Borrowed("--prefer-free-formats"),
+        Cow::Borrowed("--format-sort-force"),
+        Cow::Borrowed("--no-mtime"),
+        Cow::Borrowed("--output"),
+        output_template,
+        Cow::Borrowed("--external-downloader"),
+        Cow::Borrowed("aria2c"),
+        Cow::Borrowed("--external-downloader-args"),
+        Cow::Borrowed(ARIA2C_ARGS),
+    ]);
+
+    if let Some(cookies) = args.cookies_from {
+        result.push(Cow::Borrowed("--cookies-from-browser"));
+        result.push(Cow::Borrowed(cookies));
     }
 
     if args.socm {
@@ -51,42 +52,32 @@ pub fn build_ytdlp_args(url: &str, args: &YtDlpArgs) -> Vec<String> {
         build_quality_args(&mut result);
     }
 
-    result.push(url.to_string());
+    result.push(Cow::Borrowed(url));
     result
 }
 
-fn build_quality_args(result: &mut Vec<String>) {
-    let format_string = format!(
-        "bv*[height<={}]+ba/bv*[height<={}]",
-        MAX_RESOLUTION, MAX_RESOLUTION
-    );
-
-    result.push("--merge-output-format".to_string());
-    result.push(DEFAULT_MERGE_FORMAT.to_string());
-    result.push("--format".to_string());
-    result.push(format_string);
-    result.push("--format-sort".to_string());
-    result.push(VP9_FORMAT_SORT.to_string());
+fn build_quality_args<'a>(result: &mut Vec<Cow<'a, str>>) {
+    result.extend([
+        Cow::Borrowed("--merge-output-format"),
+        Cow::Borrowed(DEFAULT_MERGE_FORMAT),
+        Cow::Borrowed("--format"),
+        Cow::Borrowed(FORMAT_QUALITY),
+        Cow::Borrowed("--format-sort"),
+        Cow::Borrowed(VP9_FORMAT_SORT),
+    ]);
 }
 
-fn build_socm_args(result: &mut Vec<String>) {
-    let format_string = format!(
-        "bv*[height<={}]+ba/bv*[height<={}]",
-        SOCM_MAX_HEIGHT, SOCM_MAX_HEIGHT
-    );
-
-    result.push("--merge-output-format".to_string());
-    result.push(SOCM_MERGE_FORMAT.to_string());
-    result.push("--format".to_string());
-    result.push(format_string);
-    result.push("--format-sort".to_string());
-    result.push(VP9_FORMAT_SORT.to_string());
-
-    result.push("--postprocessor-args".to_string());
-    result.push(format!(
-        "ffmpeg:-c:v libx264 -preset slow -crf {} -c:a aac -b:a {} -movflags +faststart",
-        SOCM_VIDEO_CRF, SOCM_AUDIO_BITRATE
-    ));
+fn build_socm_args<'a>(result: &mut Vec<Cow<'a, str>>) {
+    result.extend([
+        Cow::Borrowed("--merge-output-format"),
+        Cow::Borrowed(SOCM_MERGE_FORMAT),
+        Cow::Borrowed("--format"),
+        Cow::Borrowed(FORMAT_SOCM),
+        Cow::Borrowed("--format-sort"),
+        Cow::Borrowed(VP9_FORMAT_SORT),
+        Cow::Borrowed("--postprocessor-args"),
+        Cow::Borrowed(SOCM_POSTPROCESSOR_ARGS),
+    ]);
 }
 
 #[cfg(test)]
@@ -95,35 +86,30 @@ mod tests {
 
     #[test]
     fn test_build_ytdlp_args_vp9() {
-        let args = YtDlpArgs {
-            destination_path: None,
-            cookies_from: None,
-            socm: false,
-        };
+        let args = YtDlpArgs::default();
         let result = build_ytdlp_args("https://example.com", &args);
-        assert!(result.contains(&"--format-sort".to_string()));
-        assert!(result.contains(&VP9_FORMAT_SORT.to_string()));
-        assert!(result.contains(&"https://example.com".to_string()));
+        assert!(result.iter().any(|s| s == "--format-sort"));
+        assert!(result.iter().any(|s| s == VP9_FORMAT_SORT));
+        assert!(result.iter().any(|s| s == "https://example.com"));
     }
 
     #[test]
     fn test_build_ytdlp_args_socm() {
         let args = YtDlpArgs {
-            destination_path: None,
-            cookies_from: None,
             socm: true,
+            ..Default::default()
         };
         let result = build_ytdlp_args("https://example.com", &args);
-        assert!(result.contains(&"mp4".to_string()));
+        assert!(result.iter().any(|s| s == "mp4"));
         assert!(result.iter().any(|s| s.contains("libx264")));
     }
 
     #[test]
     fn test_build_ytdlp_args_with_destination() {
+        let path = Path::new("/tmp");
         let args = YtDlpArgs {
-            destination_path: Some("/tmp".to_string()),
-            cookies_from: None,
-            socm: false,
+            destination_path: Some(path),
+            ..Default::default()
         };
         let result = build_ytdlp_args("https://example.com", &args);
         assert!(result.iter().any(|s| s.contains("/tmp")));
@@ -132,12 +118,11 @@ mod tests {
     #[test]
     fn test_build_ytdlp_args_with_cookies() {
         let args = YtDlpArgs {
-            destination_path: None,
-            cookies_from: Some("firefox".to_string()),
-            socm: false,
+            cookies_from: Some("firefox"),
+            ..Default::default()
         };
         let result = build_ytdlp_args("https://example.com", &args);
-        assert!(result.contains(&"--cookies-from-browser".to_string()));
-        assert!(result.contains(&"firefox".to_string()));
+        assert!(result.iter().any(|s| s == "--cookies-from-browser"));
+        assert!(result.iter().any(|s| s == "firefox"));
     }
 }

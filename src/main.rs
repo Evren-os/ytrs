@@ -5,12 +5,16 @@ mod downloader;
 mod error;
 mod url_validator;
 
-use crate::dependencies::check_dependencies;
-use crate::downloader::{download_batch, download_single};
-use crate::error::Result;
-use crate::url_validator::validate_url;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+
 use clap::Parser;
 use colored::Colorize;
+
+use crate::dependencies::check_dependencies;
+use crate::downloader::{download_batch, download_single};
+use crate::error::{Result, YtrsError};
+use crate::url_validator::validate_url;
 
 #[derive(Parser)]
 #[command(
@@ -24,7 +28,7 @@ struct Cli {
         long,
         help = "Download destination. Can be a directory or a full file path."
     )]
-    destination: Option<String>,
+    destination: Option<PathBuf>,
 
     #[arg(
         long,
@@ -44,44 +48,47 @@ struct Cli {
         default_value = "2",
         help = "Number of parallel downloads for batch mode."
     )]
-    parallel: usize,
+    parallel: NonZeroUsize,
 
     #[arg(required = true, help = "URL(s) to download")]
     urls: Vec<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    if cli.parallel < 1 {
-        eprintln!(
-            "{} number of parallel downloads (-p) must be at least 1",
-            "Error:".red()
-        );
-        std::process::exit(1);
-    }
-
+fn run(cli: Cli) -> Result<()> {
     check_dependencies(&["yt-dlp", "aria2c", "ffmpeg"])?;
+
+    let destination = cli.destination.as_deref();
+    let cookies = cli.cookies_from.as_deref();
 
     if cli.urls.len() == 1 {
         let url = cli.urls[0].trim();
         if !validate_url(url) {
-            eprintln!("{} invalid URL provided: {}", "Error:".red(), url);
-            std::process::exit(1);
+            return Err(YtrsError::NoValidUrls);
         }
 
-        download_single(url, cli.destination, cli.cookies_from, cli.socm).await?;
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?
+            .block_on(download_single(url, destination, cookies, cli.socm))
     } else {
-        download_batch(
-            cli.urls,
-            cli.destination,
-            cli.cookies_from,
-            cli.socm,
-            cli.parallel,
-        )
-        .await?;
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?
+            .block_on(download_batch(
+                cli.urls,
+                destination,
+                cookies,
+                cli.socm,
+                cli.parallel,
+            ))
     }
+}
 
-    Ok(())
+fn main() {
+    let cli = Cli::parse();
+
+    if let Err(e) = run(cli) {
+        eprintln!("{} {}", "Error:".red(), e);
+        std::process::exit(1);
+    }
 }

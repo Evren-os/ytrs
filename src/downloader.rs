@@ -1,19 +1,23 @@
-use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
-use crate::error::{Result, YtrsError};
-use crate::url_validator::sanitize_and_deduplicate;
+use std::num::NonZeroUsize;
+use std::path::Path;
+use std::sync::Arc;
+
 use colored::Colorize;
 use futures::StreamExt;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
-use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
+use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
+use crate::error::{Result, YtrsError};
+use crate::url_validator::sanitize_and_deduplicate;
+
 pub async fn download_single(
     url: &str,
-    destination_path: Option<String>,
-    cookies_from: Option<String>,
+    destination_path: Option<&Path>,
+    cookies_from: Option<&str>,
     socm: bool,
 ) -> Result<()> {
     let args = YtDlpArgs {
@@ -23,7 +27,10 @@ pub async fn download_single(
     };
 
     let cmd_args = build_ytdlp_args(url, &args);
-    let status = Command::new("yt-dlp").args(&cmd_args).status().await?;
+    let status = Command::new("yt-dlp")
+        .args(cmd_args.iter().map(AsRef::as_ref))
+        .status()
+        .await?;
 
     if !status.success() {
         return Err(YtrsError::YtDlpFailed(status.code()));
@@ -32,24 +39,32 @@ pub async fn download_single(
     Ok(())
 }
 
+struct DownloadContext {
+    destination_path: Option<Arc<Path>>,
+    cookies_from: Option<Arc<str>>,
+    socm: bool,
+}
+
 async fn download_url_task(
     url: String,
-    destination_path: Option<String>,
-    cookies_from: Option<String>,
-    socm: bool,
+    ctx: Arc<DownloadContext>,
     failed_urls: Arc<Mutex<Vec<String>>>,
 ) {
     println!("{} {}", "Starting download:".cyan(), url.cyan());
 
     let args = YtDlpArgs {
-        destination_path,
-        cookies_from,
-        socm,
+        destination_path: ctx.destination_path.as_deref(),
+        cookies_from: ctx.cookies_from.as_deref(),
+        socm: ctx.socm,
     };
 
     let cmd_args = build_ytdlp_args(&url, &args);
 
-    match Command::new("yt-dlp").args(&cmd_args).status().await {
+    match Command::new("yt-dlp")
+        .args(cmd_args.iter().map(AsRef::as_ref))
+        .status()
+        .await
+    {
         Ok(status) if status.success() => {
             println!("{} {}", "Completed download:".green(), url.green());
         }
@@ -76,26 +91,33 @@ async fn download_url_task(
 
 pub async fn download_batch(
     urls: Vec<String>,
-    destination_path: Option<String>,
-    cookies_from: Option<String>,
+    destination_path: Option<&Path>,
+    cookies_from: Option<&str>,
     socm: bool,
-    parallel: usize,
+    parallel: NonZeroUsize,
 ) -> Result<()> {
-    let clean_urls = sanitize_and_deduplicate(urls.clone());
+    let original_count = urls.len();
+    let clean_urls = sanitize_and_deduplicate(urls);
 
     if clean_urls.is_empty() {
         return Err(YtrsError::NoValidUrls);
     }
 
-    if clean_urls.len() != urls.len() {
+    if clean_urls.len() != original_count {
         println!(
             "Processing {} valid URLs (filtered from {})",
             clean_urls.len().to_string().cyan(),
-            urls.len().to_string().cyan()
+            original_count.to_string().cyan()
         );
     }
 
-    let semaphore = Arc::new(Semaphore::new(parallel));
+    let ctx = Arc::new(DownloadContext {
+        destination_path: destination_path.map(Arc::from),
+        cookies_from: cookies_from.map(Arc::from),
+        socm,
+    });
+
+    let semaphore = Arc::new(Semaphore::new(parallel.get()));
     let failed_urls = Arc::new(Mutex::new(Vec::new()));
     let mut join_set = JoinSet::new();
 
@@ -103,35 +125,31 @@ pub async fn download_batch(
     let signals_handle = signals.handle();
     let mut signals_stream = signals.fuse();
 
+    let total_urls = clean_urls.len();
+
     let download_future = async {
-        for url in clean_urls.clone() {
+        for url in clean_urls {
             let permit = semaphore
                 .clone()
                 .acquire_owned()
                 .await
-                .expect("semaphore closed unexpectedly");
+                .map_err(|_| YtrsError::SemaphoreClosed)?;
+
+            let ctx_clone = ctx.clone();
             let failed_urls_clone = failed_urls.clone();
-            let destination_path_clone = destination_path.clone();
-            let cookies_from_clone = cookies_from.clone();
 
             join_set.spawn(async move {
-                download_url_task(
-                    url,
-                    destination_path_clone,
-                    cookies_from_clone,
-                    socm,
-                    failed_urls_clone,
-                )
-                .await;
+                download_url_task(url, ctx_clone, failed_urls_clone).await;
                 drop(permit);
             });
         }
 
         while join_set.join_next().await.is_some() {}
+        Ok::<(), YtrsError>(())
     };
 
     tokio::select! {
-        () = download_future => {},
+        result = download_future => result?,
         signal = signals_stream.next() => {
             if signal.is_some() {
                 eprintln!(
@@ -153,7 +171,7 @@ pub async fn download_batch(
             "{} {}/{} downloads failed.",
             "Error:".red(),
             failed.len().to_string().red(),
-            clean_urls.len().to_string().red()
+            total_urls.to_string().red()
         );
         println!("Failed URLs:");
         for url in failed.iter() {
@@ -166,7 +184,7 @@ pub async fn download_batch(
     println!(
         "{} All {} downloads completed successfully.",
         "Success:".green(),
-        clean_urls.len()
+        total_urls
     );
 
     Ok(())

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use colored::Colorize;
 use url::Url;
 
@@ -7,37 +9,32 @@ pub fn validate_url(raw_url: &str) -> bool {
         return false;
     }
 
-    match Url::parse(trimmed) {
-        Ok(parsed) => {
-            let scheme = parsed.scheme();
-            scheme == "http" || scheme == "https"
-        }
-        Err(_) => false,
-    }
+    Url::parse(trimmed)
+        .map(|parsed| matches!(parsed.scheme(), "http" | "https"))
+        .unwrap_or(false)
 }
 
 pub fn sanitize_and_deduplicate(urls: Vec<String>) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
+    let mut seen = HashSet::with_capacity(urls.len());
+    let mut result = Vec::with_capacity(urls.len());
 
     for raw_url in urls {
-        let clean = raw_url.trim().to_string();
-        if clean.is_empty() {
+        let trimmed = raw_url.trim();
+        if trimmed.is_empty() {
             continue;
         }
 
-        if !validate_url(&clean) {
+        if !validate_url(trimmed) {
             eprintln!(
                 "{} {}",
                 "Warning: Skipping invalid URL:".yellow(),
-                clean.yellow()
+                trimmed.yellow()
             );
             continue;
         }
 
-        if !seen.contains(&clean) {
-            seen.insert(clean.clone());
-            result.push(clean);
+        if seen.insert(trimmed.to_string()) {
+            result.push(trimmed.to_string());
         }
     }
 
