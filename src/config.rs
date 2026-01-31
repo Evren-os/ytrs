@@ -14,8 +14,7 @@
 ///
 /// Format: "Video Title - Author (2160p, vp9, youtube).webm"
 /// Uses yt-dlp's fallback syntax: %(field,alternative|default)s
-pub const FILENAME_PRIMARY: &str =
-    "%(title)s - %(uploader,channel,creator|Unknown)s (%(height)sp, %(vcodec)s, %(extractor_key)s).%(ext)s";
+pub const FILENAME_PRIMARY: &str = "%(title)s - %(uploader,channel,creator|Unknown)s (%(height)sp, %(vcodec)s, %(extractor_key)s).%(ext)s";
 
 /// Primary filename template for audio-only downloads
 ///
@@ -26,8 +25,7 @@ pub const FILENAME_AUDIO_PRIMARY: &str =
 /// Primary filename template for video-only downloads
 ///
 /// Format: "Video Title - Author (2160p, vp9, youtube, video-only).webm"
-pub const FILENAME_VIDEO_ONLY_PRIMARY: &str =
-    "%(title)s - %(uploader,channel,creator|Unknown)s (%(height)sp, %(vcodec)s, %(extractor_key)s, video-only).%(ext)s";
+pub const FILENAME_VIDEO_ONLY_PRIMARY: &str = "%(title)s - %(uploader,channel,creator|Unknown)s (%(height)sp, %(vcodec)s, %(extractor_key)s, video-only).%(ext)s";
 
 // Format Selection
 
@@ -54,8 +52,7 @@ pub const FORMAT_VIDEO_ONLY: &str = "bv";
 /// Audio priority: Opus > FLAC > AAC > MP3
 ///
 /// HDR: hdr:12 excludes Dolby Vision
-pub const FORMAT_SORT_DEFAULT: &str =
-    "res,fps,vcodec:vp9.2,vcodec:vp9,vcodec:av01,vcodec:hev1,vcodec:avc,hdr:12,acodec:opus,acodec:flac,acodec:aac,acodec:mp3,size";
+pub const FORMAT_SORT_DEFAULT: &str = "res,fps,vcodec:vp9.2,vcodec:vp9,vcodec:av01,vcodec:hev1,vcodec:avc,hdr:12,acodec:opus,acodec:flac,acodec:aac,acodec:mp3,size";
 
 /// Audio-only format sort priority
 ///
@@ -72,12 +69,13 @@ pub const FORMAT_SORT_VIDEO: &str =
 
 /// Preferred container for video downloads
 ///
-/// WebM preferred for VP9/AV1, with fallbacks for other codecs
+/// `WebM` preferred for VP9/AV1, with fallbacks for other codecs
 pub const CONTAINER_VIDEO: &str = "webm/mkv/mp4";
 
 /// Preferred container for audio-only downloads
 ///
 /// Opus in OGG container preferred, with fallbacks
+#[allow(dead_code)]
 pub const CONTAINER_AUDIO: &str = "opus/ogg/m4a";
 
 /// Container for social media exports

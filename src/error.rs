@@ -23,6 +23,7 @@ pub enum YtrsError {
 
     /// yt-dlp process error (spawn/execution failure)
     #[error("yt-dlp process error: {0}")]
+    #[allow(dead_code)]
     ProcessError(String),
 
     /// No valid URLs were provided after validation
@@ -115,7 +116,7 @@ pub fn extract_error_reason(stderr: &str, exit_code: Option<i32>) -> String {
     match exit_code {
         Some(1) => "General error occurred".to_string(),
         Some(2) => "Invalid arguments provided".to_string(),
-        Some(code) => format!("yt-dlp exited with code {}", code),
+        Some(code) => format!("yt-dlp exited with code {code}"),
         None => "Process terminated unexpectedly".to_string(),
     }
 }

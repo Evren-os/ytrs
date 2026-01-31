@@ -1,14 +1,15 @@
 //! Download mode definitions and social media platform presets
 //!
-//! This module defines the core DownloadMode enum and provides
+//! This module defines the core `DownloadMode` enum and provides
 //! platform-specific configuration for social media optimization
 
 use crate::cli::SocialMediaTarget;
 
 /// Download mode determines format selection, codec priority, and post-processing
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DownloadMode {
     /// Best video+audio, maximum quality (VP9 > AV1 > H.264)
+    #[default]
     Default,
 
     /// Optimized for specific social media platform
@@ -24,10 +25,10 @@ pub enum DownloadMode {
 impl std::fmt::Display for DownloadMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DownloadMode::Default => write!(f, "Default (Max Quality)"),
-            DownloadMode::SocialMedia(target) => write!(f, "Social Media ({})", target),
-            DownloadMode::AudioOnly => write!(f, "Audio Only"),
-            DownloadMode::VideoOnly => write!(f, "Video Only"),
+            Self::Default => write!(f, "Default (Max Quality)"),
+            Self::SocialMedia(target) => write!(f, "Social Media ({target})"),
+            Self::AudioOnly => write!(f, "Audio Only"),
+            Self::VideoOnly => write!(f, "Video Only"),
         }
     }
 }
@@ -39,15 +40,16 @@ impl std::fmt::Display for DownloadMode {
 #[derive(Clone, Debug)]
 pub struct SocialMediaPreset {
     /// Maximum file size in MB
+    #[allow(dead_code)]
     pub max_size_mb: u32,
 
     /// Maximum resolution height
     pub max_height: u32,
 
-    /// FFmpeg video codec
+    /// `FFmpeg` video codec
     pub video_codec: &'static str,
 
-    /// FFmpeg audio codec
+    /// `FFmpeg` audio codec
     pub audio_codec: &'static str,
 
     /// Audio bitrate
@@ -56,16 +58,17 @@ pub struct SocialMediaPreset {
     /// CRF value for encoding
     pub crf: u8,
 
-    /// FFmpeg preset
+    /// `FFmpeg` preset
     pub preset: &'static str,
 }
 
 impl SocialMediaTarget {
     /// Get the encoding preset for this platform
-    pub fn preset(&self) -> SocialMediaPreset {
+    #[must_use]
+    pub const fn preset(self) -> SocialMediaPreset {
         match self {
             // WhatsApp
-            SocialMediaTarget::WhatsApp => SocialMediaPreset {
+            Self::WhatsApp => SocialMediaPreset {
                 max_size_mb: 16,
                 max_height: 1080,
                 video_codec: "libx264",
@@ -75,8 +78,8 @@ impl SocialMediaTarget {
                 preset: "medium",
             },
 
-            // Discord
-            SocialMediaTarget::Discord => SocialMediaPreset {
+            // Discord and Messenger have identical settings
+            Self::Discord | Self::Messenger => SocialMediaPreset {
                 max_size_mb: 25,
                 max_height: 1080,
                 video_codec: "libx264",
@@ -87,7 +90,7 @@ impl SocialMediaTarget {
             },
 
             // Instagram
-            SocialMediaTarget::Instagram => SocialMediaPreset {
+            Self::Instagram => SocialMediaPreset {
                 max_size_mb: 15,
                 max_height: 720,
                 video_codec: "libx264",
@@ -97,19 +100,8 @@ impl SocialMediaTarget {
                 preset: "medium",
             },
 
-            // Messenger
-            SocialMediaTarget::Messenger => SocialMediaPreset {
-                max_size_mb: 25,
-                max_height: 1080,
-                video_codec: "libx264",
-                audio_codec: "aac",
-                audio_bitrate: "160k",
-                crf: 20,
-                preset: "medium",
-            },
-
             // Signal
-            SocialMediaTarget::Signal => SocialMediaPreset {
+            Self::Signal => SocialMediaPreset {
                 max_size_mb: 100,
                 max_height: 1080,
                 video_codec: "libx264",
@@ -120,7 +112,7 @@ impl SocialMediaTarget {
             },
 
             // Telegram
-            SocialMediaTarget::Telegram => SocialMediaPreset {
+            Self::Telegram => SocialMediaPreset {
                 max_size_mb: 2000,
                 max_height: 2160,
                 video_codec: "libx264",
@@ -132,7 +124,8 @@ impl SocialMediaTarget {
         }
     }
 
-    pub fn format_selector(&self) -> String {
+    #[must_use]
+    pub fn format_selector(self) -> String {
         let preset = self.preset();
         format!(
             "bv*[height<={}]+ba/b[height<={}]",
@@ -140,12 +133,14 @@ impl SocialMediaTarget {
         )
     }
 
-    pub fn format_sort(&self) -> String {
+    #[must_use]
+    pub fn format_sort(self) -> String {
         let preset = self.preset();
         format!("res:{},vcodec:avc,acodec:aac,size", preset.max_height)
     }
 
-    pub fn postprocessor_args(&self) -> String {
+    #[must_use]
+    pub fn postprocessor_args(self) -> String {
         let preset = self.preset();
         format!(
             "ffmpeg:-c:v {} -preset {} -crf {} -c:a {} -b:a {} -movflags +faststart",

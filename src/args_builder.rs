@@ -1,7 +1,7 @@
 //! yt-dlp argument builder for different download modes
 //!
 //! This module constructs the complete yt-dlp command-line arguments
-//! based on the download mode (Default, AudioOnly, VideoOnly, SocialMedia)
+//! based on the download mode (Default, `AudioOnly`, `VideoOnly`, `SocialMedia`)
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -31,15 +31,9 @@ pub struct YtDlpArgs<'a> {
     pub apply_rate_limit: bool,
 }
 
-impl Default for DownloadMode {
-    fn default() -> Self {
-        DownloadMode::Default
-    }
-}
-
 /// Build complete yt-dlp arguments for a given URL and configuration
 pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, str>> {
-    let output_template = build_output_template(&args.mode, args.destination_path);
+    let output_template = build_output_template(args.mode, args.destination_path);
 
     // Estimate capacity based on mode
     let capacity = match args.mode {
@@ -95,7 +89,7 @@ pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, s
 }
 
 /// Build output template based on mode and destination
-fn build_output_template(mode: &DownloadMode, destination: Option<&Path>) -> String {
+fn build_output_template(mode: DownloadMode, destination: Option<&Path>) -> String {
     let template = match mode {
         DownloadMode::AudioOnly => FILENAME_AUDIO_PRIMARY,
         DownloadMode::VideoOnly => FILENAME_VIDEO_ONLY_PRIMARY,
@@ -110,7 +104,7 @@ fn build_output_template(mode: &DownloadMode, destination: Option<&Path>) -> Str
 }
 
 /// Arguments for default maximum quality mode
-fn build_default_args<'a>(result: &mut Vec<Cow<'a, str>>) {
+fn build_default_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
         // Container preference: WebM > MKV > MP4
         Cow::Borrowed("--merge-output-format"),
@@ -125,7 +119,7 @@ fn build_default_args<'a>(result: &mut Vec<Cow<'a, str>>) {
 }
 
 /// Arguments for audio-only mode
-fn build_audio_args<'a>(result: &mut Vec<Cow<'a, str>>) {
+fn build_audio_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
         // Extract audio
         Cow::Borrowed("-x"),
@@ -142,7 +136,7 @@ fn build_audio_args<'a>(result: &mut Vec<Cow<'a, str>>) {
 }
 
 /// Arguments for video-only mode
-fn build_video_args<'a>(result: &mut Vec<Cow<'a, str>>) {
+fn build_video_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
         // Container preference: WebM > MKV > MP4
         Cow::Borrowed("--merge-output-format"),
@@ -157,7 +151,7 @@ fn build_video_args<'a>(result: &mut Vec<Cow<'a, str>>) {
 }
 
 /// Arguments for social media optimization mode
-fn build_socm_args<'a>(result: &mut Vec<Cow<'a, str>>, target: SocialMediaTarget) {
+fn build_socm_args(result: &mut Vec<Cow<'_, str>>, target: SocialMediaTarget) {
     // Get platform-specific configuration
     let format_selector = target.format_selector();
     let format_sort = target.format_sort();

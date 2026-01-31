@@ -1,7 +1,7 @@
 //! Command-line interface definitions for ytrs
 //!
 //! This module defines the CLI structure using clap derive macros,
-//! including the SocialMediaTarget enum for platform-specific presets
+//! including the `SocialMediaTarget` enum for platform-specific presets
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ use crate::mode::DownloadMode;
 /// Social media platforms
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SocialMediaTarget {
-    /// WhatsApp: 16MB limit, H.264/AAC, 1080p
+    /// `WhatsApp`: 16MB limit, H.264/AAC, 1080p
     #[value(name = "whatsapp", alias = "wa")]
     WhatsApp,
 
@@ -42,12 +42,12 @@ pub enum SocialMediaTarget {
 impl std::fmt::Display for SocialMediaTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SocialMediaTarget::WhatsApp => write!(f, "WhatsApp"),
-            SocialMediaTarget::Discord => write!(f, "Discord"),
-            SocialMediaTarget::Instagram => write!(f, "Instagram"),
-            SocialMediaTarget::Messenger => write!(f, "Messenger"),
-            SocialMediaTarget::Signal => write!(f, "Signal"),
-            SocialMediaTarget::Telegram => write!(f, "Telegram"),
+            Self::WhatsApp => write!(f, "WhatsApp"),
+            Self::Discord => write!(f, "Discord"),
+            Self::Instagram => write!(f, "Instagram"),
+            Self::Messenger => write!(f, "Messenger"),
+            Self::Signal => write!(f, "Signal"),
+            Self::Telegram => write!(f, "Telegram"),
         }
     }
 }

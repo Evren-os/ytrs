@@ -9,6 +9,11 @@ use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
+use crate::config::BATCH_SLEEP_THRESHOLD;
+use crate::error::{Result, YtrsError, extract_error_reason};
+use crate::mode::DownloadMode;
+use crate::url_validator::sanitize_and_deduplicate;
 use colored::Colorize;
 use futures::StreamExt;
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -17,11 +22,6 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
-use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
-use crate::config::BATCH_SLEEP_THRESHOLD;
-use crate::error::{Result, YtrsError, extract_error_reason};
-use crate::mode::DownloadMode;
-use crate::url_validator::sanitize_and_deduplicate;
 
 /// Download a single URL
 pub async fn download_single(
@@ -38,7 +38,10 @@ pub async fn download_single(
     };
 
     let cmd_args = build_ytdlp_args(url, &args);
-    let cmd_args_str: Vec<String> = cmd_args.iter().map(|c| c.to_string()).collect();
+    let cmd_args_str: Vec<String> = cmd_args
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     let mut child = Command::new("yt-dlp")
         .args(&cmd_args_str)
@@ -95,7 +98,10 @@ async fn download_url_task(
     };
 
     let cmd_args = build_ytdlp_args(&url, &args);
-    let cmd_args_str: Vec<String> = cmd_args.iter().map(|c| c.to_string()).collect();
+    let cmd_args_str: Vec<String> = cmd_args
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     let result = Command::new("yt-dlp")
         .args(&cmd_args_str)
@@ -121,35 +127,36 @@ async fn download_url_task(
                     let reason = extract_error_reason(&stderr_output, status.code());
                     eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
 
-                    failed_downloads.lock().await.push(FailedDownload {
-                        url,
-                        reason,
-                    });
+                    failed_downloads
+                        .lock()
+                        .await
+                        .push(FailedDownload { url, reason });
                 }
                 Err(e) => {
-                    let reason = format!("Process error: {}", e);
+                    let reason = format!("Process error: {e}");
                     eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
 
-                    failed_downloads.lock().await.push(FailedDownload {
-                        url,
-                        reason,
-                    });
+                    failed_downloads
+                        .lock()
+                        .await
+                        .push(FailedDownload { url, reason });
                 }
             }
         }
         Err(e) => {
-            let reason = format!("Failed to spawn yt-dlp: {}", e);
+            let reason = format!("Failed to spawn yt-dlp: {e}");
             eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
 
-            failed_downloads.lock().await.push(FailedDownload {
-                url,
-                reason,
-            });
+            failed_downloads
+                .lock()
+                .await
+                .push(FailedDownload { url, reason });
         }
     }
 }
 
 /// Download multiple URLs in parallel with concurrency control
+#[allow(clippy::significant_drop_tightening)]
 pub async fn download_batch(
     urls: Vec<String>,
     destination_path: Option<&Path>,

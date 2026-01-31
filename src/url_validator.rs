@@ -60,7 +60,7 @@ mod tests {
             "https://example.com".to_string(),
             "https://example.com".to_string(),
             "https://test.com".to_string(),
-            "".to_string(),
+            String::new(),
             "invalid".to_string(),
         ];
         let result = sanitize_and_deduplicate(urls);
