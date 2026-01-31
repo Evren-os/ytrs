@@ -1,15 +1,17 @@
 [package]
 name = "ytrs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+description = "High-performance yt-dlp wrapper with social media optimization"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "process", "sync"] }
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util"] }
 url = "2.5.7"
 colored = "3.0.0"
-signal-hook = "0.3.18"
-signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"] }
+signal-hook = "0.4.3"
+signal-hook-tokio = { version = "0.4.0", features = ["futures-v0_3"] }
 which = "8.0.0"
 futures = "0.3.31"
 thiserror = "2.0.17"

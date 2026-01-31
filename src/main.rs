@@ -1,66 +1,44 @@
+//! ytrs - High-performance yt-dlp wrapper with social media optimization
+//!
+//! This is the main entry point for the ytrs CLI application
+//! It parses command-line arguments, validates dependencies, and
+//! dispatches to the appropriate download mode
+
 mod args_builder;
+mod cli;
 mod config;
 mod dependencies;
 mod downloader;
 mod error;
+mod mode;
 mod url_validator;
-
-use std::num::NonZeroUsize;
-use std::path::PathBuf;
 
 use clap::Parser;
 use colored::Colorize;
 
+use crate::cli::Cli;
+use crate::config::REQUIRED_DEPENDENCIES;
 use crate::dependencies::check_dependencies;
 use crate::downloader::{download_batch, download_single};
 use crate::error::{Result, YtrsError};
 use crate::url_validator::validate_url;
 
-#[derive(Parser)]
-#[command(
-    name = "ytrs",
-    about = "A high-quality wrapper for yt-dlp with VP9 codec optimization.",
-    long_about = "Downloads media with maximum quality VP9 codec. Supports batch mode with multiple URLs."
-)]
-struct Cli {
-    #[arg(
-        short = 'd',
-        long,
-        help = "Download destination. Can be a directory or a full file path."
-    )]
-    destination: Option<PathBuf>,
-
-    #[arg(
-        long,
-        help = "Load cookies from the specified browser (e.g., firefox, chrome)."
-    )]
-    cookies_from: Option<String>,
-
-    #[arg(
-        long,
-        help = "Optimize for social media compatibility (MP4, H.264/AAC). Uses quality-preserving re-encoding."
-    )]
-    socm: bool,
-
-    #[arg(
-        short = 'p',
-        long,
-        default_value = "2",
-        help = "Number of parallel downloads for batch mode."
-    )]
-    parallel: NonZeroUsize,
-
-    #[arg(required = true, help = "URL(s) to download")]
-    urls: Vec<String>,
-}
-
+/// Main application entry point
 fn run(cli: Cli) -> Result<()> {
-    check_dependencies(&["yt-dlp", "aria2c", "ffmpeg"])?;
+    // Verify all required external tools are installed
+    check_dependencies(REQUIRED_DEPENDENCIES)?;
+
+    // Determine download mode from CLI arguments
+    let mode = cli.download_mode()?;
+
+    // Print mode information
+    println!("{} {}", "Mode:".dimmed(), mode.to_string().cyan());
 
     let destination = cli.destination.as_deref();
     let cookies = cli.cookies_from.as_deref();
 
     if cli.urls.len() == 1 {
+        // Single URL mode
         let url = cli.urls[0].trim();
         if !validate_url(url) {
             return Err(YtrsError::NoValidUrls);
@@ -69,8 +47,9 @@ fn run(cli: Cli) -> Result<()> {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?
-            .block_on(download_single(url, destination, cookies, cli.socm))
+            .block_on(download_single(url, destination, cookies, mode))
     } else {
+        // Batch mode
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?
@@ -78,7 +57,7 @@ fn run(cli: Cli) -> Result<()> {
                 cli.urls,
                 destination,
                 cookies,
-                cli.socm,
+                mode,
                 cli.parallel,
             ))
     }
@@ -88,7 +67,7 @@ fn main() {
     let cli = Cli::parse();
 
     if let Err(e) = run(cli) {
-        eprintln!("{} {}", "Error:".red(), e);
+        eprintln!("{} {}", "Error:".red().bold(), e);
         std::process::exit(1);
     }
 }

@@ -1,99 +1,160 @@
+//! Download orchestration for single and batch downloads
+//!
+//! This module handles the async execution of yt-dlp processes,
+//! including batch processing with concurrency control, rate limiting,
+//! signal handling, and error aggregation
+
 use std::num::NonZeroUsize;
 use std::path::Path;
+use std::process::Stdio;
 use std::sync::Arc;
 
 use colored::Colorize;
 use futures::StreamExt;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
-
 use crate::args_builder::{YtDlpArgs, build_ytdlp_args};
-use crate::error::{Result, YtrsError};
+use crate::config::BATCH_SLEEP_THRESHOLD;
+use crate::error::{Result, YtrsError, extract_error_reason};
+use crate::mode::DownloadMode;
 use crate::url_validator::sanitize_and_deduplicate;
 
+/// Download a single URL
 pub async fn download_single(
     url: &str,
     destination_path: Option<&Path>,
     cookies_from: Option<&str>,
-    socm: bool,
+    mode: DownloadMode,
 ) -> Result<()> {
     let args = YtDlpArgs {
         destination_path,
         cookies_from,
-        socm,
+        mode,
+        apply_rate_limit: false,
     };
 
     let cmd_args = build_ytdlp_args(url, &args);
-    let status = Command::new("yt-dlp")
-        .args(cmd_args.iter().map(AsRef::as_ref))
-        .status()
-        .await?;
+    let cmd_args_str: Vec<String> = cmd_args.iter().map(|c| c.to_string()).collect();
 
-    if !status.success() {
-        return Err(YtrsError::YtDlpFailed(status.code()));
+    let mut child = Command::new("yt-dlp")
+        .args(&cmd_args_str)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let exit_status = child.wait().await?;
+
+    if !exit_status.success() {
+        // Read stderr for error context
+        let mut stderr_output = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = stderr.read_to_string(&mut stderr_output).await;
+        }
+
+        let reason = extract_error_reason(&stderr_output, exit_status.code());
+        return Err(YtrsError::DownloadFailed {
+            url: url.to_string(),
+            reason,
+        });
     }
 
     Ok(())
 }
 
+/// Shared context for batch downloads
 struct DownloadContext {
     destination_path: Option<Arc<Path>>,
     cookies_from: Option<Arc<str>>,
-    socm: bool,
+    mode: DownloadMode,
+    apply_rate_limit: bool,
 }
 
+/// Information about a failed download
+struct FailedDownload {
+    url: String,
+    reason: String,
+}
+
+/// Download a single URL within a batch context
 async fn download_url_task(
     url: String,
     ctx: Arc<DownloadContext>,
-    failed_urls: Arc<Mutex<Vec<String>>>,
+    failed_downloads: Arc<Mutex<Vec<FailedDownload>>>,
 ) {
-    println!("{} {}", "Starting download:".cyan(), url.cyan());
+    println!("{} {}", "Starting:".cyan(), url.cyan());
 
     let args = YtDlpArgs {
         destination_path: ctx.destination_path.as_deref(),
         cookies_from: ctx.cookies_from.as_deref(),
-        socm: ctx.socm,
+        mode: ctx.mode,
+        apply_rate_limit: ctx.apply_rate_limit,
     };
 
     let cmd_args = build_ytdlp_args(&url, &args);
+    let cmd_args_str: Vec<String> = cmd_args.iter().map(|c| c.to_string()).collect();
 
-    match Command::new("yt-dlp")
-        .args(cmd_args.iter().map(AsRef::as_ref))
-        .status()
-        .await
-    {
-        Ok(status) if status.success() => {
-            println!("{} {}", "Completed download:".green(), url.green());
-        }
-        Ok(status) => {
-            eprintln!(
-                "{} {} (exit code: {:?})",
-                "Failed to download:".red(),
-                url.red(),
-                status.code()
-            );
-            failed_urls.lock().await.push(url);
+    let result = Command::new("yt-dlp")
+        .args(&cmd_args_str)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    match result {
+        Ok(mut child) => {
+            let exit_status = child.wait().await;
+
+            match exit_status {
+                Ok(status) if status.success() => {
+                    println!("{} {}", "Completed:".green(), url.green());
+                }
+                Ok(status) => {
+                    // Read stderr for error context
+                    let mut stderr_output = String::new();
+                    if let Some(mut stderr) = child.stderr.take() {
+                        let _ = stderr.read_to_string(&mut stderr_output).await;
+                    }
+
+                    let reason = extract_error_reason(&stderr_output, status.code());
+                    eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
+
+                    failed_downloads.lock().await.push(FailedDownload {
+                        url,
+                        reason,
+                    });
+                }
+                Err(e) => {
+                    let reason = format!("Process error: {}", e);
+                    eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
+
+                    failed_downloads.lock().await.push(FailedDownload {
+                        url,
+                        reason,
+                    });
+                }
+            }
         }
         Err(e) => {
-            eprintln!(
-                "{} {} (error: {})",
-                "Failed to download:".red(),
-                url.red(),
-                e
-            );
-            failed_urls.lock().await.push(url);
+            let reason = format!("Failed to spawn yt-dlp: {}", e);
+            eprintln!("{} {} - {}", "Failed:".red(), url.red(), reason.red());
+
+            failed_downloads.lock().await.push(FailedDownload {
+                url,
+                reason,
+            });
         }
     }
 }
 
+/// Download multiple URLs in parallel with concurrency control
 pub async fn download_batch(
     urls: Vec<String>,
     destination_path: Option<&Path>,
     cookies_from: Option<&str>,
-    socm: bool,
+    mode: DownloadMode,
     parallel: NonZeroUsize,
 ) -> Result<()> {
     let original_count = urls.len();
@@ -103,29 +164,41 @@ pub async fn download_batch(
         return Err(YtrsError::NoValidUrls);
     }
 
-    if clean_urls.len() != original_count {
+    let url_count = clean_urls.len();
+
+    if url_count != original_count {
         println!(
             "Processing {} valid URLs (filtered from {})",
-            clean_urls.len().to_string().cyan(),
+            url_count.to_string().cyan(),
             original_count.to_string().cyan()
+        );
+    }
+
+    // Determine if rate limiting should be applied
+    let apply_rate_limit = url_count > BATCH_SLEEP_THRESHOLD;
+    if apply_rate_limit {
+        println!(
+            "{} Large batch detected (>{} URLs). Adding sleep intervals to prevent rate limiting.",
+            "Note:".yellow(),
+            BATCH_SLEEP_THRESHOLD
         );
     }
 
     let ctx = Arc::new(DownloadContext {
         destination_path: destination_path.map(Arc::from),
         cookies_from: cookies_from.map(Arc::from),
-        socm,
+        mode,
+        apply_rate_limit,
     });
 
     let semaphore = Arc::new(Semaphore::new(parallel.get()));
-    let failed_urls = Arc::new(Mutex::new(Vec::new()));
+    let failed_downloads = Arc::new(Mutex::new(Vec::new()));
     let mut join_set = JoinSet::new();
 
+    // Set up signal handling
     let signals = Signals::new([SIGINT, SIGTERM])?;
     let signals_handle = signals.handle();
     let mut signals_stream = signals.fuse();
-
-    let total_urls = clean_urls.len();
 
     let download_future = async {
         for url in clean_urls {
@@ -136,18 +209,20 @@ pub async fn download_batch(
                 .map_err(|_| YtrsError::SemaphoreClosed)?;
 
             let ctx_clone = ctx.clone();
-            let failed_urls_clone = failed_urls.clone();
+            let failed_downloads_clone = failed_downloads.clone();
 
             join_set.spawn(async move {
-                download_url_task(url, ctx_clone, failed_urls_clone).await;
+                download_url_task(url, ctx_clone, failed_downloads_clone).await;
                 drop(permit);
             });
         }
 
+        // Wait for all tasks to complete
         while join_set.join_next().await.is_some() {}
         Ok::<(), YtrsError>(())
     };
 
+    // Race between downloads and signals
     tokio::select! {
         result = download_future => result?,
         signal = signals_stream.next() => {
@@ -157,6 +232,7 @@ pub async fn download_batch(
                     "Received termination signal.".yellow(),
                     "Waiting for active downloads to complete...".yellow()
                 );
+                // Graceful shutdown - let current downloads finish
                 join_set.shutdown().await;
             }
         }
@@ -164,27 +240,36 @@ pub async fn download_batch(
 
     signals_handle.close();
 
-    let failed = failed_urls.lock().await;
+    // Report results
+    let failed = failed_downloads.lock().await;
     if !failed.is_empty() {
-        println!("\n--- Summary ---");
-        eprintln!(
-            "{} {}/{} downloads failed.",
-            "Error:".red(),
+        println!("\n{}", "─".repeat(50));
+        println!("{}", "DOWNLOAD SUMMARY".bold());
+        println!("{}", "─".repeat(50));
+
+        println!(
+            "{} {}/{} downloads failed",
+            "Error:".red().bold(),
             failed.len().to_string().red(),
-            total_urls.to_string().red()
+            url_count.to_string().white()
         );
-        println!("Failed URLs:");
-        for url in failed.iter() {
-            println!("  - {}", url.red());
+
+        println!("\n{}", "Failed downloads:".red().bold());
+        for fail in failed.iter() {
+            println!("  {} {}", "•".red(), fail.url.red());
+            println!("    {} {}", "Reason:".dimmed(), fail.reason.dimmed());
         }
+
         return Err(YtrsError::PartialFailure(failed.len()));
     }
 
-    println!("\n--- Summary ---");
+    println!("\n{}", "─".repeat(50));
+    println!("{}", "DOWNLOAD SUMMARY".bold());
+    println!("{}", "─".repeat(50));
     println!(
         "{} All {} downloads completed successfully.",
-        "Success:".green(),
-        total_urls
+        "Success:".green().bold(),
+        url_count
     );
 
     Ok(())
