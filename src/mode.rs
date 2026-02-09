@@ -1,24 +1,13 @@
-//! Download mode definitions and social media platform presets
-//!
-//! This module defines the core `DownloadMode` enum and provides
-//! platform-specific configuration for social media optimization
+//! Download modes and social media presets
 
 use crate::cli::SocialMediaTarget;
 
-/// Download mode determines format selection, codec priority, and post-processing
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DownloadMode {
-    /// Best video+audio, maximum quality (VP9 > AV1 > H.264)
     #[default]
     Default,
-
-    /// Optimized for specific social media platform
     SocialMedia(SocialMediaTarget),
-
-    /// Audio only
     AudioOnly,
-
-    /// Video only
     VideoOnly,
 }
 
@@ -33,41 +22,22 @@ impl std::fmt::Display for DownloadMode {
     }
 }
 
-/// Configuration preset for social media platforms
-///
-/// Each preset defines the optimal encoding parameters for a specific platform,
-/// balancing quality with file size and codec compatibility constraints
 #[derive(Clone, Debug)]
 pub struct SocialMediaPreset {
-    /// Maximum file size in MB
     #[allow(dead_code)]
     pub max_size_mb: u32,
-
-    /// Maximum resolution height
     pub max_height: u32,
-
-    /// `FFmpeg` video codec
     pub video_codec: &'static str,
-
-    /// `FFmpeg` audio codec
     pub audio_codec: &'static str,
-
-    /// Audio bitrate
     pub audio_bitrate: &'static str,
-
-    /// CRF value for encoding
     pub crf: u8,
-
-    /// `FFmpeg` preset
     pub preset: &'static str,
 }
 
 impl SocialMediaTarget {
-    /// Get the encoding preset for this platform
     #[must_use]
     pub const fn preset(self) -> SocialMediaPreset {
         match self {
-            // WhatsApp
             Self::WhatsApp => SocialMediaPreset {
                 max_size_mb: 16,
                 max_height: 1080,
@@ -77,8 +47,6 @@ impl SocialMediaTarget {
                 crf: 23,
                 preset: "medium",
             },
-
-            // Discord and Messenger have identical settings
             Self::Discord | Self::Messenger => SocialMediaPreset {
                 max_size_mb: 25,
                 max_height: 1080,
@@ -88,8 +56,6 @@ impl SocialMediaTarget {
                 crf: 20,
                 preset: "medium",
             },
-
-            // Instagram
             Self::Instagram => SocialMediaPreset {
                 max_size_mb: 15,
                 max_height: 720,
@@ -99,8 +65,6 @@ impl SocialMediaTarget {
                 crf: 23,
                 preset: "medium",
             },
-
-            // Signal
             Self::Signal => SocialMediaPreset {
                 max_size_mb: 100,
                 max_height: 1080,
@@ -110,8 +74,6 @@ impl SocialMediaTarget {
                 crf: 18,
                 preset: "slow",
             },
-
-            // Telegram
             Self::Telegram => SocialMediaPreset {
                 max_size_mb: 2000,
                 max_height: 2160,
@@ -169,30 +131,30 @@ mod tests {
         let preset = SocialMediaTarget::WhatsApp.preset();
         assert_eq!(preset.max_size_mb, 16);
         assert_eq!(preset.max_height, 1080);
-        assert_eq!(preset.crf, 23); // Higher CRF for smaller files
+        assert_eq!(preset.crf, 23);
     }
 
     #[test]
     fn test_signal_preset() {
         let preset = SocialMediaTarget::Signal.preset();
         assert_eq!(preset.max_size_mb, 100);
-        assert_eq!(preset.crf, 18); // Lower CRF for better quality
-        assert_eq!(preset.preset, "slow"); // Better compression
+        assert_eq!(preset.crf, 18);
+        assert_eq!(preset.preset, "slow");
     }
 
     #[test]
     fn test_telegram_preset() {
         let preset = SocialMediaTarget::Telegram.preset();
-        assert_eq!(preset.max_size_mb, 2000); // 2GB limit
-        assert_eq!(preset.max_height, 2160); // 4K support
-        assert_eq!(preset.crf, 18); // High quality
+        assert_eq!(preset.max_size_mb, 2000);
+        assert_eq!(preset.max_height, 2160);
+        assert_eq!(preset.crf, 18);
         assert_eq!(preset.preset, "slow");
     }
 
     #[test]
     fn test_instagram_720p() {
         let preset = SocialMediaTarget::Instagram.preset();
-        assert_eq!(preset.max_height, 720); // Instagram optimized
+        assert_eq!(preset.max_height, 720);
     }
 
     #[test]

@@ -1,7 +1,4 @@
-//! Command-line interface definitions for ytrs
-//!
-//! This module defines the CLI structure using clap derive macros,
-//! including the `SocialMediaTarget` enum for platform-specific presets
+//! CLI definitions for ytrs - clap derive macros with social media presets
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -11,30 +8,29 @@ use clap::{Parser, ValueEnum};
 use crate::error::{Result, YtrsError};
 use crate::mode::DownloadMode;
 
-/// Social media platforms
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SocialMediaTarget {
-    /// `WhatsApp`: 16MB limit, H.264/AAC, 1080p
+    /// 16MB limit, H.264/AAC, 1080p
     #[value(name = "whatsapp", alias = "wa")]
     WhatsApp,
 
-    /// Discord: 25MB, broad codec support, 1080p
+    /// 25MB, H.264/AAC, 1080p
     #[value(name = "discord", alias = "dc")]
     Discord,
 
-    /// Instagram: 15MB limit, H.264/AAC, 720p
+    /// 15MB limit, H.264/AAC, 720p
     #[value(name = "instagram", alias = "ig")]
     Instagram,
 
-    /// Facebook: 25MB limit, H.264/AAC, 1080p
+    /// 25MB limit, H.264/AAC, 1080p
     #[value(name = "messenger", alias = "fb")]
     Messenger,
 
-    /// Signal: 100MB limit, H.264/AAC, 1080p
+    /// 100MB limit, H.264/AAC, 1080p
     #[value(name = "signal", alias = "sig")]
     Signal,
 
-    /// Telegram: 2GB limit, H.264/AAC, 4K
+    /// 2GB limit, H.264/AAC, 4K
     #[value(name = "telegram", alias = "tg")]
     Telegram,
 }
@@ -58,44 +54,34 @@ impl std::fmt::Display for SocialMediaTarget {
     version,
     about = "High-performance yt-dlp wrapper with social media optimization",
     long_about = "Downloads media from yt-dlp supported sites with maximum quality (VP9 > AV1 > H.264).\n\n\
-                  Supports batch downloads, audio/video-only modes, and platform-specific \n\
+                  Supports batch downloads, audio/video-only modes, and platform-specific \
                   social media optimization for WhatsApp, Discord, Instagram, Messenger, and Signal."
 )]
 pub struct Cli {
-    /// Download destination
     #[arg(short = 'd', long, value_name = "PATH")]
     pub destination: Option<PathBuf>,
 
-    /// Load cookies from browser
     #[arg(long, value_name = "BROWSER")]
     pub cookies_from: Option<String>,
 
-    /// Optimize for social media platform
-    ///
-    /// Tuned settings for each platform (file size, codec, and resolution)
-    /// Short aliases: wa, dc, ig, fb, sig
+    /// Optimize for social media (wa, dc, ig, fb, sig, tg)
     #[arg(long, value_name = "PLATFORM")]
     pub socm: Option<SocialMediaTarget>,
 
-    /// Download audio only
     #[arg(short = 'a', long = "audio", conflicts_with_all = ["video_only", "socm"])]
     pub audio_only: bool,
 
-    /// Download video only
     #[arg(short = 'v', long = "video", conflicts_with_all = ["audio_only", "socm"])]
     pub video_only: bool,
 
-    /// Number of parallel downloads for batch mode
     #[arg(short = 'p', long, default_value = "2", value_name = "N")]
     pub parallel: NonZeroUsize,
 
-    /// URL(s) to download
     #[arg(required = true, value_name = "URL")]
     pub urls: Vec<String>,
 }
 
 impl Cli {
-    /// Determine the download mode from CLI arguments
     pub fn download_mode(&self) -> Result<DownloadMode> {
         if self.audio_only && self.video_only {
             return Err(YtrsError::InvalidModeCombo(

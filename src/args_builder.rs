@@ -1,7 +1,4 @@
 //! yt-dlp argument builder for different download modes
-//!
-//! This module constructs the complete yt-dlp command-line arguments
-//! based on the download mode (Default, `AudioOnly`, `VideoOnly`, `SocialMedia`)
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -15,36 +12,24 @@ use crate::config::{
 };
 use crate::mode::DownloadMode;
 
-/// Arguments for building yt-dlp command
 #[derive(Default)]
 pub struct YtDlpArgs<'a> {
-    /// Output destination
     pub destination_path: Option<&'a Path>,
-
-    /// Browser to load cookies from
     pub cookies_from: Option<&'a str>,
-
-    /// Download mode determining format and post-processing
     pub mode: DownloadMode,
-
-    /// Whether to apply rate limiting for large batches
     pub apply_rate_limit: bool,
 }
 
-/// Build complete yt-dlp arguments for a given URL and configuration
 pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, str>> {
     let output_template = build_output_template(args.mode, args.destination_path);
 
-    // Estimate capacity based on mode
     let capacity = match args.mode {
         DownloadMode::SocialMedia(_) => 24,
         _ => 20,
     };
     let mut result: Vec<Cow<'a, str>> = Vec::with_capacity(capacity);
 
-    // Core arguments (all modes)
     result.extend([
-        // Enable remote JS components for YouTube support
         Cow::Borrowed("--remote-components"),
         Cow::Borrowed("ejs:github"),
         Cow::Borrowed("--prefer-free-formats"),
@@ -58,13 +43,11 @@ pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, s
         Cow::Borrowed(ARIA2C_ARGS),
     ]);
 
-    // Cookies
     if let Some(cookies) = args.cookies_from {
         result.push(Cow::Borrowed("--cookies-from-browser"));
         result.push(Cow::Borrowed(cookies));
     }
 
-    // Rate limiting for large batches
     if args.apply_rate_limit {
         result.extend([
             Cow::Borrowed("--sleep-requests"),
@@ -74,7 +57,6 @@ pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, s
         ]);
     }
 
-    // Mode-specific arguments
     match &args.mode {
         DownloadMode::Default => build_default_args(&mut result),
         DownloadMode::AudioOnly => build_audio_args(&mut result),
@@ -82,13 +64,11 @@ pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, s
         DownloadMode::SocialMedia(target) => build_socm_args(&mut result, *target),
     }
 
-    // URL (always last)
     result.push(Cow::Borrowed(url));
 
     result
 }
 
-/// Build output template based on mode and destination
 fn build_output_template(mode: DownloadMode, destination: Option<&Path>) -> String {
     let template = match mode {
         DownloadMode::AudioOnly => FILENAME_AUDIO_PRIMARY,
@@ -103,74 +83,54 @@ fn build_output_template(mode: DownloadMode, destination: Option<&Path>) -> Stri
     }
 }
 
-/// Arguments for default maximum quality mode
 fn build_default_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
-        // Container preference: WebM > MKV > MP4
         Cow::Borrowed("--merge-output-format"),
         Cow::Borrowed(CONTAINER_VIDEO),
-        // Format selection: best video + best audio
         Cow::Borrowed("--format"),
         Cow::Borrowed(FORMAT_DEFAULT),
-        // Format sorting: VP9 > AV1 > H.264
         Cow::Borrowed("--format-sort"),
         Cow::Borrowed(FORMAT_SORT_DEFAULT),
     ]);
 }
 
-/// Arguments for audio-only mode
 fn build_audio_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
-        // Extract audio
         Cow::Borrowed("-x"),
-        // Container preference: Opus > OGG > M4A
         Cow::Borrowed("--audio-format"),
         Cow::Borrowed("opus"),
-        // Format selection: best audio
         Cow::Borrowed("--format"),
         Cow::Borrowed(FORMAT_AUDIO_ONLY),
-        // Format sorting: Opus > FLAC > AAC
         Cow::Borrowed("--format-sort"),
         Cow::Borrowed(FORMAT_SORT_AUDIO),
     ]);
 }
 
-/// Arguments for video-only mode
 fn build_video_args(result: &mut Vec<Cow<'_, str>>) {
     result.extend([
-        // Container preference: WebM > MKV > MP4
         Cow::Borrowed("--merge-output-format"),
         Cow::Borrowed(CONTAINER_VIDEO),
-        // Format selection: best video only
         Cow::Borrowed("--format"),
         Cow::Borrowed(FORMAT_VIDEO_ONLY),
-        // Format sorting: VP9 > AV1 > H.264
         Cow::Borrowed("--format-sort"),
         Cow::Borrowed(FORMAT_SORT_VIDEO),
     ]);
 }
 
-/// Arguments for social media optimization mode
 fn build_socm_args(result: &mut Vec<Cow<'_, str>>, target: SocialMediaTarget) {
-    // Get platform-specific configuration
     let format_selector = target.format_selector();
     let format_sort = target.format_sort();
     let pp_args = target.postprocessor_args();
 
     result.extend([
-        // Container: MP4 for maximum compatibility
         Cow::Borrowed("--merge-output-format"),
         Cow::Borrowed(CONTAINER_SOCM),
-        // Remux to MP4 if possible
         Cow::Borrowed("--remux-video"),
         Cow::Borrowed("mp4"),
-        // Format selection with resolution cap
         Cow::Borrowed("--format"),
         Cow::Owned(format_selector),
-        // Format sorting: prefer H.264 source to avoid re-encoding
         Cow::Borrowed("--format-sort"),
         Cow::Owned(format_sort),
-        // Post-processor args for re-encoding when necessary
         Cow::Borrowed("--postprocessor-args"),
         Cow::Owned(pp_args),
     ]);
@@ -213,7 +173,7 @@ mod tests {
         };
         let result = build_ytdlp_args("https://example.com", &args);
 
-        assert!(result.iter().any(|s| s == "bv"));
+        assert!(result.iter().any(|s| s.contains("bv[height<=2160]")));
     }
 
     #[test]
@@ -237,7 +197,6 @@ mod tests {
         };
         let result = build_ytdlp_args("https://example.com", &args);
 
-        // Instagram should cap at 720p
         assert!(result.iter().any(|s| s.contains("height<=720")));
     }
 

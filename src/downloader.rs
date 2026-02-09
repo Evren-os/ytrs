@@ -1,8 +1,4 @@
-//! Download orchestration for single and batch downloads
-//!
-//! This module handles the async execution of yt-dlp processes,
-//! including batch processing with concurrency control, rate limiting,
-//! signal handling, and error aggregation
+//! Download orchestration with async execution and concurrency control
 
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -23,7 +19,6 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
-/// Download a single URL
 pub async fn download_single(
     url: &str,
     destination_path: Option<&Path>,
@@ -68,7 +63,6 @@ pub async fn download_single(
     Ok(())
 }
 
-/// Shared context for batch downloads
 struct DownloadContext {
     destination_path: Option<Arc<Path>>,
     cookies_from: Option<Arc<str>>,
@@ -76,13 +70,11 @@ struct DownloadContext {
     apply_rate_limit: bool,
 }
 
-/// Information about a failed download
 struct FailedDownload {
     url: String,
     reason: String,
 }
 
-/// Download a single URL within a batch context
 async fn download_url_task(
     url: String,
     ctx: Arc<DownloadContext>,
@@ -118,7 +110,6 @@ async fn download_url_task(
                     println!("{} {}", "Completed:".green(), url.green());
                 }
                 Ok(status) => {
-                    // Read stderr for error context
                     let mut stderr_output = String::new();
                     if let Some(mut stderr) = child.stderr.take() {
                         let _ = stderr.read_to_string(&mut stderr_output).await;
@@ -155,7 +146,6 @@ async fn download_url_task(
     }
 }
 
-/// Download multiple URLs in parallel with concurrency control
 #[allow(clippy::significant_drop_tightening)]
 pub async fn download_batch(
     urls: Vec<String>,
@@ -181,7 +171,6 @@ pub async fn download_batch(
         );
     }
 
-    // Determine if rate limiting should be applied
     let apply_rate_limit = url_count > BATCH_SLEEP_THRESHOLD;
     if apply_rate_limit {
         println!(
@@ -202,7 +191,6 @@ pub async fn download_batch(
     let failed_downloads = Arc::new(Mutex::new(Vec::new()));
     let mut join_set = JoinSet::new();
 
-    // Set up signal handling
     let signals = Signals::new([SIGINT, SIGTERM])?;
     let signals_handle = signals.handle();
     let mut signals_stream = signals.fuse();
@@ -239,7 +227,6 @@ pub async fn download_batch(
                     "Received termination signal.".yellow(),
                     "Waiting for active downloads to complete...".yellow()
                 );
-                // Graceful shutdown - let current downloads finish
                 join_set.shutdown().await;
             }
         }
@@ -247,7 +234,6 @@ pub async fn download_batch(
 
     signals_handle.close();
 
-    // Report results
     let failed = failed_downloads.lock().await;
     if !failed.is_empty() {
         println!("\n{}", "─".repeat(50));

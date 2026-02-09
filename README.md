@@ -6,7 +6,7 @@
 
 ## Features
 
-- **VP9-First Quality**: Automatically prioritizes VP9 > AV1 > H.264 for maximum fidelity with broad hardware compatibility.
+- **VP9-First Quality**: Automatically prioritizes VP9 > AV1 > H.264 for maximum fidelity with broad hardware compatibility. Resolution capped at 4K.
 - **High-Performance Engine**: Integrates with `aria2c` using conservative 8-connection settings to maximize speed while avoiding rate-limiting.
 - **Concurrency Control**: Built on the Tokio runtime with semaphore-based concurrency limiting to safely manage parallel batch downloads.
 - **Social Media Optimization**: Platform-specific presets for WhatsApp, Discord, Instagram, Messenger, Signal, and Telegram with tuned encoding settings.
