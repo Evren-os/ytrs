@@ -31,6 +31,10 @@ pub const BATCH_SLEEP_SECONDS: u64 = 5;
 pub const REQUEST_SLEEP_SECONDS: f64 = 0.5;
 pub const REQUIRED_DEPENDENCIES: &[&str] = &["yt-dlp", "aria2c", "ffmpeg"];
 
+// Minimum yt-dlp version whose advisories are all fixed for ytrs's flag set.
+// The only knob a future advisory ever changes: raise it to the fixing release.
+pub const MIN_YTDLP_VERSION: &str = "2026.06.09";
+
 #[cfg(test)]
 mod tests {
     use super::*;

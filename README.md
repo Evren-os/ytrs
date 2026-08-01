@@ -20,7 +20,7 @@
 ## Requirements
 
 - **Rust**: 1.85+ (2024 edition)
-- **Dependencies**: `yt-dlp`, `aria2c`, and `ffmpeg` must be installed and available in your PATH.
+- **Dependencies**: `yt-dlp` **≥ `2026.06.09`**, `aria2c`, and `ffmpeg` must be installed and available in your PATH.
 
 ## Installation
 
@@ -37,30 +37,39 @@ The resulting binary will be located at `target/release/ytrs`.
 `ytrs` simplifies complex `yt-dlp` commands into intuitive flags.
 
 ### Basic Download
+
 Download a single video with default high-quality settings (VP9 > AV1 > H.264):
+
 ```bash
 ytrs "https://youtube.com/watch?v=..."
 ```
 
 ### Batch Processing
+
 Download multiple URLs in parallel (default: 2 concurrent downloads):
+
 ```bash
 ytrs "URL1" "URL2" "URL3"
 ```
 
 ### Audio Only
+
 Download only the audio in highest quality Opus format:
+
 ```bash
 ytrs -a "https://youtube.com/watch?v=..."
 ```
 
 ### Video Only
+
 Download only the video (no audio track):
+
 ```bash
 ytrs -v "https://youtube.com/watch?v=..."
 ```
 
 ### Social Media Optimization
+
 Optimize downloads for specific platforms with tuned encoding settings:
 
 ```bash
@@ -86,19 +95,25 @@ ytrs --socm telegram "https://youtube.com/watch?v=..."
 Short aliases are also supported: `wa`, `dc`, `ig`, `fb`, `sig`, `tg`
 
 ### Browser Cookies
+
 Load cookies from a specific browser to access authenticated content:
+
 ```bash
 ytrs --cookies-from firefox "URL"
 ```
 
 ### Custom Destination
+
 Specify output directory:
+
 ```bash
 ytrs -d ~/Videos "URL"
 ```
 
 ### Parallel Downloads
+
 Control concurrency for batch downloads:
+
 ```bash
 ytrs -p 4 "URL1" "URL2" "URL3" "URL4"
 ```

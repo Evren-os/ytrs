@@ -14,13 +14,14 @@ use colored::Colorize;
 
 use crate::cli::Cli;
 use crate::config::REQUIRED_DEPENDENCIES;
-use crate::dependencies::check_dependencies;
+use crate::dependencies::{check_dependencies, enforce_ytdlp_version};
 use crate::downloader::{download_batch, download_single};
 use crate::error::{Result, YtrsError};
 use crate::url_validator::validate_url;
 
 fn run(cli: Cli) -> Result<()> {
     check_dependencies(REQUIRED_DEPENDENCIES)?;
+    enforce_ytdlp_version()?;
 
     let mode = cli.download_mode()?;
 

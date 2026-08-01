@@ -7,6 +7,14 @@ pub enum YtrsError {
     #[error("Dependency '{0}' is not installed or not found in PATH")]
     MissingDependency(String),
 
+    #[error(
+        "yt-dlp version '{installed}' does not meet the required minimum {minimum}. \
+         The minimum exists because older builds carry unfixed security advisories \
+         applicable to ytrs. Update yt-dlp and try again; see \
+         docs/yt-dlp-cve-audit.md for the per-advisory matrix."
+    )]
+    UnsupportedYtdlpVersion { installed: String, minimum: String },
+
     #[error("Download failed for '{url}': {reason}")]
     DownloadFailed { url: String, reason: String },
 
@@ -161,6 +169,45 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Download failed for 'https://example.com': Video is private"
+        );
+    }
+
+    #[test]
+    fn test_unsupported_version_message_names_versions() {
+        let err = YtrsError::UnsupportedYtdlpVersion {
+            installed: "2025.01.01".to_string(),
+            minimum: "2026.06.09".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("2025.01.01"),
+            "installed version in message: {msg}"
+        );
+        assert!(
+            msg.contains("2026.06.09"),
+            "minimum version in message: {msg}"
+        );
+        assert!(
+            msg.contains("docs/yt-dlp-cve-audit.md"),
+            "audit document referenced in message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_unsupported_version_distinct_from_missing_dependency() {
+        let unsupported = YtrsError::UnsupportedYtdlpVersion {
+            installed: "2025.01.01".to_string(),
+            minimum: "2026.06.09".to_string(),
+        };
+        let missing = YtrsError::MissingDependency("yt-dlp".to_string());
+        assert!(
+            !matches!(unsupported, YtrsError::MissingDependency(_)),
+            "rejected version must not surface as a missing dependency"
+        );
+        assert_ne!(
+            unsupported.to_string(),
+            missing.to_string(),
+            "refusal message must differ from the missing-dependency message"
         );
     }
 }
