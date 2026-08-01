@@ -30,6 +30,7 @@ pub fn build_ytdlp_args<'a>(url: &'a str, args: &YtDlpArgs<'a>) -> Vec<Cow<'a, s
     let mut result: Vec<Cow<'a, str>> = Vec::with_capacity(capacity);
 
     result.extend([
+        Cow::Borrowed("--ignore-config"),
         Cow::Borrowed("--remote-components"),
         Cow::Borrowed("ejs:github"),
         Cow::Borrowed("--prefer-free-formats"),
@@ -140,6 +141,99 @@ fn build_socm_args(result: &mut Vec<Cow<'_, str>>, target: SocialMediaTarget) {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    const ALL_MODES: [DownloadMode; 9] = [
+        DownloadMode::Default,
+        DownloadMode::AudioOnly,
+        DownloadMode::VideoOnly,
+        DownloadMode::SocialMedia(SocialMediaTarget::WhatsApp),
+        DownloadMode::SocialMedia(SocialMediaTarget::Discord),
+        DownloadMode::SocialMedia(SocialMediaTarget::Instagram),
+        DownloadMode::SocialMedia(SocialMediaTarget::Messenger),
+        DownloadMode::SocialMedia(SocialMediaTarget::Signal),
+        DownloadMode::SocialMedia(SocialMediaTarget::Telegram),
+    ];
+
+    const NEVER_EMITTED_FLAGS: [&str; 8] = [
+        "--exec",
+        "--write-link",
+        "--write-url-link",
+        "--write-desktop-link",
+        "--netrc-cmd",
+        "--write-subs",
+        "--write-thumbnail",
+        "--compat-options",
+    ];
+
+    fn assert_no_advisory_flags(result: &[Cow<'_, str>]) {
+        for window in result.windows(2) {
+            let pair = format!("{} {}", window[0], window[1]);
+            assert_ne!(pair, "--compat-options allow-unsafe-ext");
+            assert_ne!(pair, "--external-downloader curl");
+        }
+        for arg in result {
+            let token = arg.as_ref();
+            for flag in NEVER_EMITTED_FLAGS {
+                assert_ne!(token, flag, "advisory-triggering flag {flag} emitted");
+                assert!(
+                    !token.starts_with(&format!("{flag}=")),
+                    "advisory-triggering flag {flag} emitted"
+                );
+            }
+            assert_ne!(token, "--external-downloader=curl");
+            assert_ne!(token, "curl", "curl external downloader emitted");
+            assert_ne!(token, "allow-unsafe-ext", "allow-unsafe-ext emitted");
+        }
+    }
+
+    #[test]
+    fn test_external_downloader_is_aria2c() {
+        for mode in ALL_MODES {
+            let args = YtDlpArgs {
+                mode,
+                ..Default::default()
+            };
+            let result = build_ytdlp_args("https://example.com", &args);
+
+            let downloader_pos = result
+                .iter()
+                .position(|s| s == "--external-downloader")
+                .unwrap_or_else(|| panic!("mode {mode:?} missing --external-downloader"));
+            assert_eq!(result[downloader_pos + 1], "aria2c");
+        }
+    }
+
+    fn args_for_mode(mode: DownloadMode) -> YtDlpArgs<'static> {
+        YtDlpArgs {
+            mode,
+            cookies_from: Some("firefox"),
+            apply_rate_limit: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_config_isolation_flag_present_in_all_modes() {
+        for mode in ALL_MODES {
+            let args = args_for_mode(mode);
+            let result = build_ytdlp_args("https://example.com", &args);
+
+            assert!(
+                result.iter().any(|s| s == "--ignore-config"),
+                "mode {mode:?} missing --ignore-config"
+            );
+        }
+    }
+
+    #[test]
+    fn test_never_emits_advisory_triggering_flags() {
+        for mode in ALL_MODES {
+            let args = args_for_mode(mode);
+            let result = build_ytdlp_args("https://example.com", &args);
+
+            assert_no_advisory_flags(&result);
+        }
+    }
 
     #[test]
     fn test_build_ytdlp_args_default() {
